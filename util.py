@@ -28,7 +28,7 @@ class Table:
         # fonte: https://www.sciencedirect.com/science/article/abs/pii/S1364032119301881
         e = 0.18
         PROD_AVG_CLIENT_KWH = 1600 * power_kWp * (1 - e)
-        self.table['Injeção'] = self.table['Injeção'] * PROD_AVG_CLIENT_KWH / 1000
+        self.table['Produção'] = self.table['Produção'] * PROD_AVG_CLIENT_KWH / 1000
 
     def _splitInMonths(self):
         """
@@ -65,61 +65,78 @@ class Table:
         end = beg + 96;
         return self.months[month][beg : end]
 
-# class Fatura:
-#     @staticmethod
-#     def getPeakPeriodInDay(df_day):
 
+
+"""
+When V2H returns to home, we should set its charge level.
+We defined the charge level to 50% of capacity when V2H returns home.
+Also, the minimum charge level is 50% i.e. charge level must not be below this threshhold.
+"""
 
 class BatteryV2H:
     EFFICIENCY = 0.85
     #  capacidade média utilizável da bateria em kWh
     #  fonte: https://ev-database.org/cheatsheet/useable-battery-capacity-electric-car
     MAX_CAPACITY = 60.1
-
     _charge_level = 0
 
-    def setChargeLevel(self, kWh):
+    def __init__(self, sheetname):
+        self.df = pd.read_excel(io='usage_periods.xls', sheet_name=sheetname)
+        self._charge_level = self._getMinimumChargeLevel()
+        self._totalDrained = 0
+        self._totalStored = 0
+
+    def _setChargeLevel(self, kWh):
         _charge_level = kWh;
 
-    def getMinimumChargeLevel(self):
+    def _getMinimumChargeLevel(self):
         available_factor = 0.5 # valor arbitrário
-        return MAX_CAPACITY * available_factor # [kWh]
+        return self.MAX_CAPACITY * available_factor # [kWh]
     
-    def getMaximumChargeLevel(self):
-        return MAX_CAPACITY
+    def _getMaximumChargeLevel(self):
+        return self.MAX_CAPACITY
 
     def getFreeSpaceToStore(self):
         """
         get space available to store in kWh
         """
-        return MAX_CAPACITY - self._getChargeLevel()
+        return self._getMaximumChargeLevel() - self._getChargeLevel()
+
 
     def getFreeSpaceToDrain(self):
         """
         get space available to drain from battery in kWh
         """
-        if self._getChargeLevel() > 
+        return self._getChargeLevel() - self._getMinimumChargeLevel()
 
     def _getChargeLevel(self):
+        if self._charge_level > self._getMaximumChargeLevel():
+            raise Exception("Charge level is greater than maximum charge level\n")
+        if self._charge_level < self._getMinimumChargeLevel():
+            raise Exception("Charge level is smaller than minimum charge level\n")
+
         return self._charge_level
 
     def getSoC():
-        return self._charge_level / MAX_CAPACITY
+        return self._charge_level / self.MAX_CAPACITY
 
     def getDoD():
         return 1 - self.getSoC()
 
-    def __init__(self, sheetname):
-
-        self.df = pd.read_excel(io='usage_periods.xls', sheet_name=sheetname)
 
     # def getEnergyAvailable(kWh):
 
-    def drain(kWh):
+    def drain(self, kWh):
         self._charge_level = self._charge_level - kWh
+        self._totalDrained = self._totalDrained + kWh
+        if self._charge_level < self._getMinimumChargeLevel():
+            raise Exception(f"charge level below minimum {self._getMinimumChargeLevel()}\n")
 
-    def store(kWh):
+    def store(self, kWh):
         self._charge_level = self._charge_level + kWh
+        self._totalStored = self._totalStored + kWh
+        if self._charge_level > self._getMaximumChargeLevel():
+            raise Exception(f"charge level above maximum {self._getMaximumChargeLevel()}")
 
     def isAvailable(self, ts):
         """
@@ -137,7 +154,21 @@ class BatteryV2H:
         if hh >= begin and hh <= end:
             return True
         else:
+            # Set the charge to the level which will be available when V2H goes home. 
+            self._setChargeLevel(self._getMinimumChargeLevel())
             return False
+
+    def getTotalStored(self):
+        return self._totalStored
+
+    def getTotalDrained(self):
+        return self._totalDrained
+
+    def resetTotalStored(self):
+        self._totalStored = 0
+
+    def resetTotalDrained(self):
+        self._totalDrained = 0
 
 
 class Fatura:
@@ -145,11 +176,11 @@ class Fatura:
     OFFPEAK_END = 8
 
     # €/kWh
-    PRICE_OFFPEAK = 0.1213;
-    PRICE_PEAK = 0.2262;
+    PRICE_OFFPEAK = 0.1213
+    PRICE_PEAK = 0.2262
     # preço da injeção em EUR/kWh
     # fonte: m.omie.es/files/omie_informe_precios_pt.pdf?m=yes
-    PRICE_INJECTION = 0.05745;
+    PRICE_INJECTION = 0.05745
     
     @staticmethod
     def isWithinOffpeak(ts):
@@ -160,9 +191,9 @@ class Fatura:
 
         hh = ts.hour + ts.minute / 60
 
-        if hh > OFFPEAK_BEGIN and hh <= 24:
+        if hh > Fatura.OFFPEAK_BEGIN and hh <= 24:
             within = True
-        elif hh > 0 and hh <= OFFPEAK_END:
+        elif hh > 0 and hh <= Fatura.OFFPEAK_END:
             within = True
 
         return within
@@ -181,26 +212,128 @@ class Fatura:
         self._waste = self._waste + kwh
 
     def addConsumption(self, kwh, ts):
-        if isWithinOffpeak(ts):
+        if self.isWithinOffpeak(ts):
             self._consumption_offpeak = self._consumption_offpeak + kwh
         else:
             self._consumption_peak = self._consumption_peak + kwh
 
     def getInjectionValue(self):
-        return self._injection * PRICE_INJECTION
+        return self._injection * self.PRICE_INJECTION
 
     def getConsumptionValue(self):
-        return self._consumption_offpeak * PRICE_OFFPEAK 
-             + self._consumption_peak * PRICE_PEAK
+        return self._consumption_offpeak * self.PRICE_OFFPEAK \
+             + self._consumption_peak * self.PRICE_PEAK
 
     def getFinalValue(self):
         return self.getConsumptionValue() - self.getInjectionValue()
     
+    def setBatteryTotalStored(self, kWh):
+        self._batteryTotalStored = kWh
+    def setBatteryTotalDrained(self, kWh):
+        self._batteryTotalDrained = kWh
+
+    def getBatteryTotalStored(self):
+        return self._batteryTotalStored
+
+    def getBatteryTotalDrained(self):
+        return self._batteryTotalDrained
+
     def printInfo(self):
-        print(f"Total injection     : {self._injection}\n")
-        print(f"Total waste         : {self._waste}\n")
-        print(f"Total peak cons.    : {self._consumption_peak}\n")
-        print(f"Total offpeak cons. : {self._consumption_offpeak}\n")
-        print(f"Final value         : {self.getFinalValue()}\n")
+        print(f"Total injection     : {self._injection} kWh\n")
+        print(f"Total waste         : {self._waste} kWh\n")
+        print(f"Total peak cons.    : {self._consumption_peak} kWh\n")
+        print(f"Total offpeak cons. : {self._consumption_offpeak} kWh\n")
+        print(f"Final value         : {self.getFinalValue()} EUR\n")
+        print(f"Total bat. stored   : {self.getBatteryTotalStored()} kWh\n")
+        print(f"Total bat. drained  : {self.getBatteryTotalDrained()} kWh\n")
 
 
+def getFaturasYear(injection, battery_profile, kWp):
+
+    if injection is not True and injection is not False:
+        raise Exception("Injection must be true or false\n")
+
+    kwps = [0.5, 0.75, 1.5, 3.45]
+    if kWp not in kwps:
+        raise Exception(f"kWp must be one of {kwps}")
+
+    tab = Table()
+    bat = BatteryV2H(battery_profile)
+
+    tab.setCons_kW()
+    tab.setInjection_kWp(kWp)
+
+    months = tab.getMonths()
+
+    faturas = []
+
+    for m in range(0, 12, 1):
+        
+        fat = Fatura()
+
+        days = tab.getDaysInMonth(m)
+        for d in range(0, days, 1):
+        
+            day_df = tab.getDayInMonth(m, d)
+
+            exc = (day_df["Produção"] - day_df["Consumo"]).array
+
+            for interval in range(0, 96, 1):
+                # every 15 min of this day
+
+                if exc[interval] >= 0:
+                    # produção >= consumo
+                    
+                    if bat.isAvailable(day_df["Datetime"].array[interval]):
+                        
+                        space = bat.getFreeSpaceToStore()
+
+                        if space >= exc[interval]:
+                            bat.store(exc[interval])
+                        else:
+                            # exc > space
+                            bat.store(space)
+                            remaining = exc - space
+                            if injection is True:
+                                fat.addInjection(remaining)
+                            else:
+                                fat.addWaste(remaining)
+
+                    else:
+                        # battery not available
+                        if injection is True:
+                            fat.addInjection(exc[interval])
+                        else:
+                            fat.addWaste(exc[interval])
+
+                else:
+                    # consumo > produção
+                    exc[interval] = abs(exc[interval])
+
+                    if bat.isAvailable(day_df["Datetime"].array[interval]):
+                        space = bat.getFreeSpaceToDrain()
+
+                        if space >= exc[interval]:
+                            # all energy required is supplied by battery
+                            bat.drain(exc[interval])
+                            # fat.addConsumption(exc[interval], day_df["Datetime"].array[interval])
+                        else:
+                            # exc > space
+                            # partial energy required is supplied by battery
+                            bat.drain(space)
+                            fat.addConsumption(space, day_df["Datetime"].array[interval])
+                    else:
+                        # battery not available
+                        fat.addConsumption(exc[interval], day_df["Datetime"].array[interval])
+
+        # end of month
+
+        # save battery drained and stored values for info/debug later
+        fat.setBatteryTotalDrained(bat.getTotalDrained())
+        fat.setBatteryTotalStored(bat.getTotalStored())
+        bat.resetTotalDrained()
+        bat.resetTotalStored()
+
+        faturas.append(fat)
+
+    return faturas
