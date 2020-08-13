@@ -163,6 +163,19 @@ class BatteryV2H:
         begin = row['begin'].array[0]
         end = row['end'].array[0]
 
+        # standard NaN is the only value which returns false in a comparison with itself
+        def isnan(x):
+            return x != x
+
+        if isnan(begin) and isnan(end):
+            # the cells are empty which means vehicle is not being used
+            return True
+
+        if isnan(begin) and not isnan(end):
+            raise Exception("Begin is nan but End is not. Wrong xls input.\n")
+        if not isnan(begin) and isnan(end):
+            raise Exception("End is nan but Begin is not. Wrong xls input.\n")
+
         if hh >= begin and hh <= end:
             return True
         else:
@@ -183,7 +196,7 @@ class BatteryV2H:
         self._totalDrained = 0
 
 
-class Fatura:
+class Bill:
     OFFPEAK_BEGIN = 22
     OFFPEAK_END = 8
 
@@ -203,9 +216,9 @@ class Fatura:
 
         hh = ts.hour + ts.minute / 60
 
-        if hh > Fatura.OFFPEAK_BEGIN and hh <= 24:
+        if hh > Bill.OFFPEAK_BEGIN and hh <= 24:
             within = True
-        elif hh > 0 and hh <= Fatura.OFFPEAK_END:
+        elif hh > 0 and hh <= Bill.OFFPEAK_END:
             within = True
 
         return within
@@ -260,7 +273,7 @@ class Fatura:
         print(f"Total bat. drained  : {self.getBatteryTotalDrained()} kWh\n")
 
 
-def getFaturasYear(injection, kWp, batteryV2H_obj):
+def getMonthlyBillsOfYear(injection, kWp, batteryV2H_obj):
 
     if injection is not True and injection is not False:
         raise Exception("Injection must be true or false\n")
@@ -280,11 +293,13 @@ def getFaturasYear(injection, kWp, batteryV2H_obj):
 
     months = tab.getMonths()
 
-    faturas = []
+    bills = []
+    billsNoPV = []
 
     for m in range(0, 12, 1):
         
-        fat = Fatura()
+        bill = Bill()
+        billNoPV = Bill()
 
         days = tab.getDaysInMonth(m)
         for d in range(0, days, 1):
@@ -295,6 +310,9 @@ def getFaturasYear(injection, kWp, batteryV2H_obj):
 
             for interval in range(0, 96, 1):
                 # every 15 min of this day
+
+                billNoPV.addConsumption(day_df["Consumo"].array[interval], 
+                                        day_df["Datetime"].array[interval])
 
                 if exc[interval] >= 0:
                     # produção >= consumo
@@ -310,16 +328,16 @@ def getFaturasYear(injection, kWp, batteryV2H_obj):
                             bat.store(space)
                             remaining = exc[interval] - space
                             if injection is True:
-                                fat.addInjection(remaining)
+                                bill.addInjection(remaining)
                             else:
-                                fat.addWaste(remaining)
+                                bill.addWaste(remaining)
 
                     else:
                         # battery not available
                         if injection is True:
-                            fat.addInjection(exc[interval])
+                            bill.addInjection(exc[interval])
                         else:
-                            fat.addWaste(exc[interval])
+                            bill.addWaste(exc[interval])
 
                 else:
                     # consumo > produção
@@ -336,19 +354,20 @@ def getFaturasYear(injection, kWp, batteryV2H_obj):
                             # exc > space
                             # partial energy required is supplied by battery
                             bat.drain(space)
-                            fat.addConsumption(space, day_df["Datetime"].array[interval])
+                            bill.addConsumption(space, day_df["Datetime"].array[interval])
                     else:
                         # battery not available
-                        fat.addConsumption(exc[interval], day_df["Datetime"].array[interval])
+                        bill.addConsumption(exc[interval], day_df["Datetime"].array[interval])
 
         # end of month
 
         # save battery drained and stored values for info/debug later
-        fat.setBatteryTotalDrained(bat.getTotalDrained())
-        fat.setBatteryTotalStored(bat.getTotalStored())
+        bill.setBatteryTotalDrained(bat.getTotalDrained())
+        bill.setBatteryTotalStored(bat.getTotalStored())
         bat.resetTotalDrained()
         bat.resetTotalStored()
 
-        faturas.append(fat)
+        bills.append(bill)
+        billsNoPV.append(billNoPV)
 
-    return faturas
+    return [bills, billsNoPV]
