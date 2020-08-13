@@ -80,8 +80,15 @@ class BatteryV2H:
     MAX_CAPACITY = 60.1
     _charge_level = 0
 
-    def __init__(self, sheetname):
-        self.df = pd.read_excel(io='usage_periods.xls', sheet_name=sheetname)
+    def __init__(self, sheetname='', always=False, never=False):
+        self._always = always
+        self._never = never
+        if always and never:
+            raise Exception("always and never are both True")
+
+        if not always and not never:
+            self.df = pd.read_excel(io='usage_periods.xls', sheet_name=sheetname)
+
         self._charge_level = self._getMinimumChargeLevel()
         self._totalDrained = 0
         self._totalStored = 0
@@ -142,6 +149,11 @@ class BatteryV2H:
         """
         ts: Pandas Timestamp object 
         """
+
+        if self._always:
+            return True
+        elif self._never:
+            return False
 
         # filter = data['week_num'] == ts.dayofweek
         # row = self.df.where(filter)
@@ -248,7 +260,7 @@ class Fatura:
         print(f"Total bat. drained  : {self.getBatteryTotalDrained()} kWh\n")
 
 
-def getFaturasYear(injection, battery_profile, kWp):
+def getFaturasYear(injection, kWp, batteryV2H_obj):
 
     if injection is not True and injection is not False:
         raise Exception("Injection must be true or false\n")
@@ -257,9 +269,12 @@ def getFaturasYear(injection, battery_profile, kWp):
     if kWp not in kwps:
         raise Exception(f"kWp must be one of {kwps}")
 
-    tab = Table()
-    bat = BatteryV2H(battery_profile)
+    if not isinstance(batteryV2H_obj, BatteryV2H):
+        raise Exception("Not an instance of BatteryV2H\n")
 
+    bat = batteryV2H_obj
+    
+    tab = Table()
     tab.setCons_kW()
     tab.setInjection_kWp(kWp)
 
@@ -293,7 +308,7 @@ def getFaturasYear(injection, battery_profile, kWp):
                         else:
                             # exc > space
                             bat.store(space)
-                            remaining = exc - space
+                            remaining = exc[interval] - space
                             if injection is True:
                                 fat.addInjection(remaining)
                             else:
