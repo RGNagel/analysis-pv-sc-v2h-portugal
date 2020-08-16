@@ -1,7 +1,15 @@
 from pandas import DataFrame, read_csv
 import pandas as pd
+import numpy as np
+import numpy_financial as npf
 
 class Table:
+    CONS_AVG_CLIENT_KWH = 3506.00
+    
+    @staticmethod
+    def PROD_AVG_CLIENT_KWH(kWp, e, hours):
+        # src: https://www.sciencedirect.com/science/article/abs/pii/S1364032119301881
+        return hours * kWp * (1 - e)
 
     def __init__(self):
         
@@ -21,14 +29,11 @@ class Table:
         return self.months
 
     def setCons_kW(self):
-        CONS_AVG_CLIENT_KWH = 3506.00
-        self.table['Consumo'] = self.table['Consumo'] * CONS_AVG_CLIENT_KWH / 1000
+        self.table['Consumo'] = self.table['Consumo'] * Table.CONS_AVG_CLIENT_KWH / 1000
 
     def setInjection_kWp(self, power_kWp):
-        # fonte: https://www.sciencedirect.com/science/article/abs/pii/S1364032119301881
-        e = 0.18
-        PROD_AVG_CLIENT_KWH = 1600 * power_kWp * (1 - e)
-        self.table['Produção'] = self.table['Produção'] * PROD_AVG_CLIENT_KWH / 1000
+        prod = Table.PROD_AVG_CLIENT_KWH(power_kWp, 0.18, 1600)
+        self.table['Produção'] = self.table['Produção'] * prod / 1000
 
     def _splitInMonths(self):
         """
@@ -293,6 +298,158 @@ class Bill:
         print(f"Total bat. stored   : {self.getBatteryTotalStored()} kWh\n")
         print(f"Total bat. drained  : {self.getBatteryTotalDrained()} kWh\n")
 
+class Investment:
+
+    def __init__(self, years, kWp, injection, battery):
+        kwps = [0.5, 0.75, 1.50, 3.45]
+        if kWp not in kwps:
+            raise Exception("kWp value is not valid")
+
+        if injection != True and injection != False:
+            raise Exception("Injection is neither True or False")
+
+        if not isinstance(battery, BatteryV2H):
+            raise Exception("battery is not BatteryV2H object")
+
+        self._years = years
+        self._kWp = kWp
+        self._injection = injection
+        self._inflows = np.zeros(years)
+        self._outflows = np.zeros(years)
+
+        self._discount_rate_Y = 0.04
+        self._discount_rate_M = (1 + self._discount_rate_Y) ** (1 / 12) - 1
+        self._depreciation = 0.075 # 0.75%/ano
+        # maintenance & ops costs
+        self._maintenance_ops = 0.01 # 1% of total investiment
+
+        self._addEquipmentCosts(self._kWp)
+        self._addTaxCosts(self._kWp, self._injection)
+
+        self._addBillIncome(injection, kWp, battery)
+
+        # after all costs and incomes calculated:
+        self._addMaintenanceAndOpsCosts()
+        self._flows = self._inflows - self._outflows
+
+        if self._flows[0] >= 0:
+            raise Exception("Year 0 has positive income. How?")
+
+    def _addMaintenanceAndOpsCosts(self):
+
+        for y in range(1, self._years, 1):
+            # total costs until year y
+            cost = np.sum(self._outflows[0:y])
+            self.addOutflow(y, cost * self._maintenance_ops)
+
+    @staticmethod
+    def futureValue(rate, cashflow):
+        factor = 1 + rate
+        fv = 0
+        n = len(cashflow)
+        for i in range(0, n, 1):
+            fv = fv + cashflow[i] * factor ** (n - i)
+
+        return fv
+
+    # def getAnnualIncome(self): 
+    #     return Investment.futureValue(self._discount_rate_M, income)
+    
+    def _addBillIncome(self, injection, kWp, battery):
+        [bills, billsNoPV] = getMonthlyBillsOfYear(injection, kWp, battery)
+
+        finalValuesNoPV = list((map(lambda bill : bill.getFinalValue(), billsNoPV)))
+        finalValues     = list((map(lambda bill : bill.getFinalValue(), bills)))
+        # savings for every month
+        income = np.array(finalValuesNoPV) - np.array(finalValues)
+        
+        annual_income = Investment.futureValue(self._discount_rate_M, income)
+
+        for y in range(1, self._years, 1):
+            self.addInflow(y, annual_income)
+
+    def getNPV(self):
+        return npf.npv(self._discount_rate_Y, self._flows)
+    
+    def getIRR(self):
+        return npf.irr(self._flows)
+
+    def getPI(self):
+        subflow = self._flows[1 : self._years]
+        subflow = np.concatenate([[0], subflow])
+        return npf.npv(self._discount_rate_Y, subflow) / abs(self._flows[0])
+
+    def getDPP(self):
+        
+        value = abs(self._flows[0])
+        
+        for y in range(1, self._years):
+            factor = (1 + self._discount_rate_Y ) ** y
+            value = value - self._flows[y] / factor
+            if value == 0:
+                return y
+            elif value < 0:
+                value = value + self._flows[y] / factor # undo line above
+                # DPP between i and i + 1
+                return y + value / self._flows[y] / factor 
+
+        return -1
+
+    def getLCOE(self):
+        annual_kwh = Table.CONS_AVG_CLIENT_KWH * np.ones(self._years)
+        total_kwh = npf.npv(self._discount_rate_Y, annual_kwh)
+        total_cost = npf.npv(self._discount_rate_Y, self._outflows)
+        return total_cost / total_kwh
+
+    def printInfo(self):
+        print(f"Injection={self._injection} kWp={self._kWp}")
+
+        print(f"NPV    : {self.getNPV() }\n")
+        print(f"IRR    : {self.getIRR() }\n")
+        print(f"PI     : {self.getPI()  }\n")
+        print(f"DPP    : {self.getDPP() }\n")
+        print(f"LCOE   : {self.getLCOE()}\n")
+
+    def _checkYear(self, year):
+        if year < 0 or year >= self._years:
+            raise Exception("year index out of bound")
+
+    def addInflow(self, year, value):
+        self._checkYear(year)
+        self._inflows[year] = self._inflows[year] + value
+
+    def addOutflow(self, year, value):
+        self._checkYear(year)
+        self._outflows[year] = self._outflows[year] + value
+
+    def _addEquipmentCosts(self, kWp):
+        filename = 'equipment.xls'
+        df = pd.read_excel(filename)
+
+        # TODO MAYBE better way to iterate over df?
+        for i in range(0, len(df), 1):
+            if df['kWp'][i] == kWp:
+                # add to year 0
+                self.addOutflow(0, df['price'][i])
+                # TODO handle salvage value here when duration < 25 years
+
+    def _addTaxCosts(self, kWp, injection):
+        """
+        src: https://dre.pt/application/file/a/66321064
+        every 10 year 20% of initial cost is charged
+        """
+        tax = 0
+        if injection is False and kWp >= 1.5 and kWp <= 5:
+            tax = 70
+        elif injection is True and kWp <= 1.5:
+            tax = 30
+        elif injection is True and kWp >= 1.5 and kWp <= 5:
+            tax = 100
+
+        self.addOutflow(0, tax)
+
+        self.addOutflow(9, tax * 0.2)
+        self.addOutflow(19, tax  * 0.2)
 
 def getMonthlyBillsOfYear(injection, kWp, batteryV2H_obj):
 
