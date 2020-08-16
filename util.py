@@ -137,7 +137,7 @@ class BatteryV2H:
         self._charge_level = self._charge_level - kWh
         self._totalDrained = self._totalDrained + kWh
         if self._charge_level < self._getMinimumChargeLevel():
-            raise Exception(f"charge level below minimum {self._getMinimumChargeLevel()}\n")
+            raise Exception(f"charge level below minimum {self._getMinimumChargeLevel()}")
 
     def store(self, kWh):
         self._charge_level = self._charge_level + kWh
@@ -154,6 +154,8 @@ class BatteryV2H:
             return True
         elif self._never:
             return False
+
+        # TODO: handle 00:00 as not available if it is within. This is an issue related to the day changing            
 
         # filter = data['week_num'] == ts.dayofweek
         # row = self.df.where(filter)
@@ -175,13 +177,30 @@ class BatteryV2H:
             raise Exception("Begin is nan but End is not. Wrong xls input.\n")
         if not isnan(begin) and isnan(end):
             raise Exception("End is nan but Begin is not. Wrong xls input.\n")
+        if begin == end:
+            raise Exception("Begin is equal to End.\n")
+        if begin == 24 or end == 24:
+            raise Exception("24 is not a valid hour. Use 00 instead.\n")
 
-        if hh >= begin and hh <= end:
-            return True
+        iswithin = False
+
+        if begin < end:
+            if hh > begin and hh <= end:
+                iswithin = True               
         else:
+            # begin > end
+            iswithin = True
+            if hh > end and hh <= begin:
+                iswithin = False
+
+
+        if iswithin == True:
             # Set the charge to the level which will be available when V2H goes home. 
             self._setChargeLevel(self._getMinimumChargeLevel())
             return False
+        else:
+            return True
+
 
     def getTotalStored(self):
         return self._totalStored
@@ -216,9 +235,9 @@ class Bill:
 
         hh = ts.hour + ts.minute / 60
 
-        if hh > Bill.OFFPEAK_BEGIN and hh <= 24:
+        if hh > Bill.OFFPEAK_BEGIN and hh < 24:
             within = True
-        elif hh > 0 and hh <= Bill.OFFPEAK_END:
+        elif hh >= 0 and hh <= Bill.OFFPEAK_END:
             within = True
 
         return within
@@ -229,6 +248,8 @@ class Bill:
         self._consumption_peak = 0
         self._consumption_offpeak = 0
         self._waste = 0
+        self._batteryTotalStored = 0
+        self._batteryTotalDrained = 0
 
     def addInjection(self, kwh):
         self._injection = self._injection + kwh
@@ -352,9 +373,10 @@ def getMonthlyBillsOfYear(injection, kWp, batteryV2H_obj):
                             # fat.addConsumption(exc[interval], day_df["Datetime"].array[interval])
                         else:
                             # exc > space
-                            # partial energy required is supplied by battery
+                            # partial or none energy required is supplied by battery
                             bat.drain(space)
-                            bill.addConsumption(space, day_df["Datetime"].array[interval])
+                            remaining = exc[interval] - space
+                            bill.addConsumption(remaining, day_df["Datetime"].array[interval])
                     else:
                         # battery not available
                         bill.addConsumption(exc[interval], day_df["Datetime"].array[interval])
@@ -364,6 +386,9 @@ def getMonthlyBillsOfYear(injection, kWp, batteryV2H_obj):
         # save battery drained and stored values for info/debug later
         bill.setBatteryTotalDrained(bat.getTotalDrained())
         bill.setBatteryTotalStored(bat.getTotalStored())
+        billNoPV.setBatteryTotalDrained(0)
+        billNoPV.setBatteryTotalStored(0)
+        
         bat.resetTotalDrained()
         bat.resetTotalStored()
 
