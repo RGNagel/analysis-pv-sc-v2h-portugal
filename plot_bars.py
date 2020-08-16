@@ -14,13 +14,16 @@ dict_bats = [
         'desc': "Never available"
     },{
         'bat': BatteryV2H('workday'),
-        'desc': "Workday"
+        'desc': "Morning + afternoon workday"
     },{
         'bat': BatteryV2H('workday_morning'),
         'desc': "Morning workday"
     },{
         'bat': BatteryV2H('workday_afternoon'),
         'desc': "Afternoon workday"
+    },{
+        'bat': BatteryV2H('workday_evening'),
+        'desc': "Evening workday"
     },{
         'bat': BatteryV2H('weekend'),
         'desc': "Weekend"
@@ -41,9 +44,10 @@ for i in range(0, len(dict_bats), 1):
     [bills, billsNoPV] = getMonthlyBillsOfYear(injection, kWp, bat)
     finalValuesNoPV = list((map(lambda bill : bill.getFinalValue(), billsNoPV)))
     finalValues     = list((map(lambda bill : bill.getFinalValue(), bills)))
+    
     diff = np.array(finalValuesNoPV) - np.array(finalValues)
 
-    plt.bar(positions + i * bar_width, finalValues, bar_width, tick_label=months, label=desc)
+    plt.bar(positions + i * bar_width, diff, bar_width, tick_label=months, label=desc)
 
 plt.title(f"Monthly savings with PV system of {kWp} kWp {'with injection' if injection else 'without injection'}")
 plt.xlabel('Months')
