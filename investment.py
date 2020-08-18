@@ -64,8 +64,8 @@ for kwp in kwps:
             IRR  = investment.getIRR()
             PI   = investment.getPI()
             DPP  = investment.getDPP()
-            if DPP < 0:
-                DPP = '>25'
+            # if DPP < 0:
+            #     DPP = '>25'
             LCOE = investment.getLCOE()
             tables[kwp]['NPV'].append(NPV)
             tables[kwp]['IRR'].append(IRR)
@@ -78,6 +78,17 @@ for kwp in kwps:
 
     kwp_fmt = str(kwp).replace(".", "_")
     filename = f"results/{kwp_fmt}.xls"
+
     df.to_excel(excel_writer=filename, 
                 float_format="%.4f",
                 index=False)
+
+    filename = f"results/{kwp_fmt}.tex"
+    caption  = f"Economical parameter for {kwp} kWp setup"
+    label    = f"tab:results-{kwp}"
+    df.to_latex(buf=filename, 
+                float_format="%.4f",
+                index=False,
+                caption=caption,
+                label=label)
+    
