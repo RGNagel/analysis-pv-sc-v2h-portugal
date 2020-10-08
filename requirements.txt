@@ -1,0 +1,4 @@
+matplotlib==3.0.2
+numpy==1.16.2
+numpy-financial==1.0.0
+pandas==1.0.3

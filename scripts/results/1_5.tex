@@ -1,0 +1,25 @@
+\begin{table}
+\centering
+\caption{Economical parameter for 1.5 kWp setup}
+\label{tab:results-1.5}
+\begin{tabular}{llrrrrr}
+\toprule
+ grid injection & V2H occupied periods &        NPV &    IRR &      PI &     DPP &   LCOE \\
+\midrule
+           True &     always available &  4277.5114 & 0.3151 &  4.7955 &  4.3340 & 0.0232 \\
+           True &   sat-sun 6:00-24:00 &  3239.3104 & 0.2539 &  3.8743 &  5.2345 & 0.0232 \\
+           True &  mon-fri 13:00-18:00 &  3419.9254 & 0.2646 &  4.0345 &  5.1072 & 0.0232 \\
+           True &  mon-fri 18:00-23:00 &  2681.3175 & 0.2206 &  3.3792 &  6.0271 & 0.0232 \\
+           True &   mon-fri 8:00-13:00 &  3092.0134 & 0.2451 &  3.7436 &  5.3463 & 0.0232 \\
+           True &   mon-fri 8:00-18:00 &  1585.1735 & 0.1532 &  2.4065 &  8.2096 & 0.0232 \\
+           True &        not available &   437.2157 & 0.0752 &  1.3879 & 15.2023 & 0.0232 \\
+          False &     always available &  4186.4213 & 0.3017 &  4.5873 &  4.4510 & 0.0242 \\
+          False &   sat-sun 6:00-24:00 &  2688.1345 & 0.2157 &  3.3035 &  6.0986 & 0.0242 \\
+          False &  mon-fri 13:00-18:00 &  2808.9664 & 0.2227 &  3.4070 &  5.6646 & 0.0242 \\
+          False &  mon-fri 18:00-23:00 &  2223.3988 & 0.1884 &  2.9052 &  6.5905 & 0.0242 \\
+          False &   mon-fri 8:00-13:00 &  2335.4674 & 0.1951 &  3.0013 &  6.4600 & 0.0242 \\
+          False &   mon-fri 8:00-18:00 &   274.6532 & 0.0620 &  1.2353 & 18.0456 & 0.0242 \\
+          False &        not available & -1381.0709 &    NaN & -0.1834 & -1.0000 & 0.0242 \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -13,7 +13,7 @@ class Table:
 
     def __init__(self):
         
-        filename = 'datetime_consumo_injecao.xls'
+        filename = '../data/datetime_consumo_injecao.xls'
         self.table = pd.read_excel(filename)
 
         self._splitInMonths()
@@ -92,7 +92,7 @@ class BatteryV2H:
             raise Exception("always and never are both True")
 
         if not always and not never:
-            self.df = pd.read_excel(io='usage_periods.xls', sheet_name=sheetname)
+            self.df = pd.read_excel(io='../data/usage_periods.xls', sheet_name=sheetname)
 
         self._charge_level = self._getMinimumChargeLevel()
         self._totalDrained = 0
@@ -289,6 +289,18 @@ class Bill:
     def getBatteryTotalDrained(self):
         return self._batteryTotalDrained
 
+    def getWaste(self):
+        return self._waste
+
+    def getInjection(self):
+        return self._injection
+
+    def getConsumptionOffpeak(self):
+        return self._consumption_offpeak
+
+    def getConsumptionPeak(self):
+        return self._consumption_peak
+
     def printInfo(self):
         print(f"Total injection     : {self._injection} kWh\n")
         print(f"Total waste         : {self._waste} kWh\n")
@@ -423,7 +435,7 @@ class Investment:
         self._outflows[year] = self._outflows[year] + value
 
     def _addEquipmentCosts(self, kWp):
-        filename = 'equipment.xls'
+        filename = '../data/equipment.xls'
         df = pd.read_excel(filename)
 
         # TODO MAYBE better way to iterate over df?

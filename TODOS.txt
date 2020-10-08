@@ -1,0 +1,9 @@
+- write README.md
+- document data in data/
+- reorganize/refactor scripts
+- move some hard-coded data in scripts/ to data/
+- improve script execution time! it is currently very slow
+- add cli parameters for scripts
+- detect automatically best v2h usage profile 
+- create automatically table showing cases when no injection is more profitable than injection
+- MAYBE: change results table to show 'injection' and 'no injection' side by side

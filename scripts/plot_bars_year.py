@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 injection = True
+kWp = 3.45
 
 dict_bats = [
     {
@@ -36,41 +37,28 @@ dict_bats = [
 ]
 
 x = list(map(lambda obj : obj['desc'], dict_bats))
-y = {
-    3.45: [],
-    1.50: [],
-    0.75: [],
-    0.5: [],
-}
-
-positions = np.arange(0, len(dict_bats))
+y = []
+# Position of bars on x-axis
 
 for i in range(0, len(dict_bats), 1):
     bat = dict_bats[i]['bat']
     desc = dict_bats[i]['desc']
 
-    for kwp in y:
-        [bills, billsNoPV] = getMonthlyBillsOfYear(injection, kwp, bat)    
-        finalValuesNoPV = list((map(lambda bill : bill.getFinalValue(), billsNoPV)))
-        finalValues     = list((map(lambda bill : bill.getFinalValue(), bills)))
-        diff = np.array(finalValuesNoPV) - np.array(finalValues)
-        y[kwp].append(np.average(diff))
+    [bills, billsNoPV] = getMonthlyBillsOfYear(injection, kWp, bat)
+    finalValuesNoPV = list((map(lambda bill : bill.getFinalValue(), billsNoPV)))
+    finalValues     = list((map(lambda bill : bill.getFinalValue(), bills)))
+    diff = np.array(finalValuesNoPV) - np.array(finalValues)
+
+    y.append(np.average(diff))
+
+    # plt.bar(positions + i * bar_width, diff, bar_width, tick_label=months, label=desc)
 
 
-fig, ax = plt.subplots()
+plt.bar(x,y)
+# plt.xticks(rotation='vertical')
 
-# bar_width = 0.20
-
-for kwp in y:
-    ax.bar(x, y[kwp], tick_label=x, label=f"{kwp} kWp")
-
-# no title for article
-# plt.title(f"Average monthly savings {'with injection' if injection else 'without injection'}")
+plt.title(f"Average monthly savings with PV system of {kWp} kWp {'with injection' if injection else 'without injection'}")
 plt.xlabel('Period in which the vehicle (V2H) is being used or occupied')
 plt.ylabel('EUR')
-
-# legend = list(map(lambda x : str(x) + ' kWp', y))
 plt.legend()
-
 plt.show()
-# plt.savefig(fname=f"figures/avg_monthly_savings_{'inj' if injection else 'noinj'}.png")
